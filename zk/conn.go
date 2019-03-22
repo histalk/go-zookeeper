@@ -382,12 +382,12 @@ func (c *Conn) connect() error {
 			c.conn = zkConn
 			c.setState(StateConnected)
 			if c.logInfo {
-				c.logger.Printf("Connected to %s", c.Server())
+				c.logger.Printf("[zookeeper] Connected to %s", c.Server())
 			}
 			return nil
 		}
 
-		c.logger.Printf("Failed to connect to %s: %+v", c.Server(), err)
+		c.logger.Printf("[zookeeper] Failed to connect to %s: %+v", c.Server(), err)
 	}
 }
 
@@ -409,13 +409,13 @@ func (c *Conn) resendZkAuth(reauthReadyChan chan struct{}) {
 	defer close(reauthReadyChan)
 
 	if c.logInfo {
-		c.logger.Printf("Re-submitting `%d` credentials after reconnect",
+		c.logger.Printf("[zookeeper] Re-submitting `%d` credentials after reconnect",
 			len(c.creds))
 	}
 
 	for _, cred := range c.creds {
 		if shouldCancel() {
-			c.logger.Printf("Cancel rer-submitting credentials")
+			c.logger.Printf("[zookeeper] Cancel rer-submitting credentials")
 			return
 		}
 		resChan, err := c.sendRequest(
@@ -428,7 +428,7 @@ func (c *Conn) resendZkAuth(reauthReadyChan chan struct{}) {
 			nil)
 
 		if err != nil {
-			c.logger.Printf("Call to sendRequest failed during credential resubmit: %s", err)
+			c.logger.Printf("[zookeeper] Call to sendRequest failed during credential resubmit: %s", err)
 			// FIXME(prozlach): lets ignore errors for now
 			continue
 		}
@@ -437,14 +437,14 @@ func (c *Conn) resendZkAuth(reauthReadyChan chan struct{}) {
 		select {
 		case res = <-resChan:
 		case <-c.closeChan:
-			c.logger.Printf("Recv closed, cancel re-submitting credentials")
+			c.logger.Printf("[zookeeper] Recv closed, cancel re-submitting credentials")
 			return
 		case <-c.shouldQuit:
-			c.logger.Printf("Should quit, cancel re-submitting credentials")
+			c.logger.Printf("[zookeeper] Should quit, cancel re-submitting credentials")
 			return
 		}
 		if res.err != nil {
-			c.logger.Printf("Credential re-submit failed: %s", res.err)
+			c.logger.Printf("[zookeeper] Credential re-submit failed: %s", res.err)
 			// FIXME(prozlach): lets ignore errors for now
 			continue
 		}
@@ -486,14 +486,14 @@ func (c *Conn) loop() {
 		err := c.authenticate()
 		switch {
 		case err == ErrSessionExpired:
-			c.logger.Printf("Authentication failed: %s", err)
+			c.logger.Printf("[zookeeper] Authentication failed: %s", err)
 			c.invalidateWatches(err)
 		case err != nil && c.conn != nil:
-			c.logger.Printf("Authentication failed: %s", err)
+			c.logger.Printf("[zookeeper] Authentication failed: %s", err)
 			c.conn.Close()
 		case err == nil:
 			if c.logInfo {
-				c.logger.Printf("Authenticated: id=%d, timeout=%d", c.SessionID(), c.sessionTimeoutMs)
+				c.logger.Printf("[zookeeper] Authenticated: id=%x, timeout=%d", c.SessionID(), c.sessionTimeoutMs)
 			}
 			c.hostProvider.Connected()        // mark success
 			c.closeChan = make(chan struct{}) // channel to tell send loop stop
@@ -508,7 +508,7 @@ func (c *Conn) loop() {
 				}
 				err := c.sendLoop()
 				if err != nil || c.logInfo {
-					c.logger.Printf("Send loop terminated: err=%v", err)
+					c.logger.Printf("[zookeeper] Send loop terminated: err=%v", err)
 				}
 				c.conn.Close() // causes recv loop to EOF/exit
 				wg.Done()
@@ -523,7 +523,7 @@ func (c *Conn) loop() {
 					err = c.recvLoop(c.conn)
 				}
 				if err != io.EOF || c.logInfo {
-					c.logger.Printf("Recv loop terminated: err=%v", err)
+					c.logger.Printf("[zookeeper] Recv loop terminated: err=%v", err)
 				}
 				if err == nil {
 					panic("zk: recvLoop should never return nil error")
@@ -673,7 +673,7 @@ func (c *Conn) sendSetWatches() {
 		for _, req := range reqs {
 			_, err := c.request(opSetWatches, req, res, nil)
 			if err != nil {
-				c.logger.Printf("Failed to set previous watches: %s", err.Error())
+				c.logger.Printf("[zookeeper] Failed to set previous watches: %s", err.Error())
 				break
 			}
 		}
@@ -886,7 +886,7 @@ func (c *Conn) recvLoop(conn net.Conn) error {
 		} else if res.Xid == -2 {
 			// Ping response. Ignore.
 		} else if res.Xid < 0 {
-			c.logger.Printf("Xid < 0 (%d) but not ping or watcher event", res.Xid)
+			c.logger.Printf("[zookeeper] Xid < 0 (%d) but not ping or watcher event", res.Xid)
 		} else {
 			if res.Zxid > 0 {
 				c.lastZxid = res.Zxid
@@ -900,7 +900,7 @@ func (c *Conn) recvLoop(conn net.Conn) error {
 			c.requestsLock.Unlock()
 
 			if !ok {
-				c.logger.Printf("Response for unknown request with xid %d", res.Xid)
+				c.logger.Printf("[zookeeper] Response for unknown request with xid %d", res.Xid)
 			} else {
 				if res.Err != 0 {
 					err = res.Err.toError()
